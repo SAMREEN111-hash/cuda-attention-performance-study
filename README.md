@@ -29,6 +29,40 @@ using Tesla T4 published specs (320 GB/s peak bandwidth, ~8.1 TFLOPS peak FP32).
 
 ## Phase 3: Tiled Kernel (FlashAttention-style)
 
+Implemented shared-memory tiling for Q@K^T (TILE_SIZE=16, head_dim=64).
+Verified bit-exact correctness against PyTorch (max diff = 0.0).
+
+**Debugging note:** initial version had a bug where the shared-memory
+store loop only copied back 16 of 64 columns per row (missing the
+chunked loop that the load step used), causing 74% data corruption on a
+load/store validation test. Fixed by mirroring the load loop's chunking
+pattern in the store step.
+
+**Performance (averaged over 3 runs per size, T4 GPU):**
+
+| SEQ_LEN | Naive (ms) | Tiled (ms) | Ratio |
+|---|---|---|---|
+| 256 | 0.354 | 0.376 | 1.06x slower |
+| 512 | 0.791 | 0.772 | 0.98x (tied) |
+| 1024 | 2.524 | 2.627 | 1.04x slower |
+| 2048 | 10.823 | 10.129 | 0.94x |
+
+**Finding:** Naive run-to-run variance was substantial (up to 28% swing
+at SEQ_LEN=2048 across identical runs on shared cloud GPU), making
+single-run comparisons unreliable.
+
+**Conclusion:** Reducing redundant global-memory reads via shared-memory
+tiling does not automatically translate to a proportional speedup. At
+head_dim=64 with TILE_SIZE=16, each block reuses loaded data only 16x
+before discarding it and re-synchronizing — the synchronization and
+load overhead largely offsets the memory-traffic savings at this scale.
+Averaged results show tiled shows a small advantage at the largest
+tested size (2048), but the gap is within the run-to-run noise floor
+observed on this shared cloud GPU, so this should not be read as a
+confident win — only as a direction worth pursuing further with
+stronger optimizations (larger tiles, register-level reuse, warp-level
+primitives, Tensor Cores).
+
 ## Phase 4: Tensor Core / WMMA Kernel
 
 ## Phase 5: Roofline Analysis
