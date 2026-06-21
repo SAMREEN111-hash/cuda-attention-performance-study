@@ -65,6 +65,29 @@ primitives, Tensor Cores).
 
 ## Phase 4: Tensor Core / WMMA Kernel
 
+**Tensor Core Bring-Up (WMMA minimal kernel):**
+
+Implemented a minimal WMMA kernel using NVIDIA Tensor Cores on a T4 GPU
+(Turing, sm_75) before attempting real Q@K^T data.
+
+Kernel configuration:
+- Matrix size: 16×16 × 16×16
+- Input precision: FP16 (half)
+- Accumulator precision: FP32
+- Execution model: one warp (32 threads) driving one Tensor Core operation
+
+Key WMMA APIs validated: `wmma::fragment`, `wmma::load_matrix_sync`,
+`wmma::mma_sync`, `wmma::store_matrix_sync`
+
+Validation test: A = all ones, B = all ones (16×16 each).
+Expected: every output element = 16 (sum of 16 products of 1×1).
+Observed: all 256 output elements matched exactly, 0 errors.
+
+**Result: PASS** — confirms the full WMMA pipeline (fragment load →
+Tensor Core MMA → FP32 accumulation → store) works correctly on this
+hardware before mapping real attention data onto it.
+
+
 ## Phase 5: Roofline Analysis
 
 ## Phase 6: Production Comparison (PyTorch SDPA, FlashAttention-2)
